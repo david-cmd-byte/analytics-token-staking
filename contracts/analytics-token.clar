@@ -246,3 +246,80 @@
         (ok proposal-id)
     )
 )
+
+(define-public (vote-on-proposal (proposal-id uint) (vote-for bool))
+    (let
+        (
+            (proposal (unwrap! (map-get? Proposals { proposal-id: proposal-id }) ERR-INVALID-PROTOCOL))
+            (user-position (unwrap! (map-get? UserPositions tx-sender) ERR-NOT-AUTHORIZED))
+            (voting-power (get voting-power user-position))
+            (max-proposal-id (var-get proposal-count))
+        )
+        (asserts! (< block-height (get end-block proposal)) ERR-NOT-AUTHORIZED)
+        (asserts! (and (> proposal-id u0) (<= proposal-id max-proposal-id)) ERR-INVALID-PROTOCOL)
+        
+        (map-set Proposals { proposal-id: proposal-id }
+            (merge proposal
+                {
+                    votes-for: (if vote-for (+ (get votes-for proposal) voting-power) (get votes-for proposal)),
+                    votes-against: (if vote-for (get votes-against proposal) (+ (get votes-against proposal) voting-power))
+                }
+            )
+        )
+        (ok true)
+    )
+)
+
+;; Contract Control
+(define-public (pause-contract)
+    (begin
+        (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-NOT-AUTHORIZED)
+        (var-set contract-paused true)
+        (ok true)
+    )
+)
+
+(define-public (resume-contract)
+    (begin
+        (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-NOT-AUTHORIZED)
+        (var-set contract-paused false)
+        (ok true)
+    )
+)
+
+;; Read-Only Functions
+
+(define-read-only (get-contract-owner)
+    (ok CONTRACT-OWNER)
+)
+
+(define-read-only (get-stx-pool)
+    (ok (var-get stx-pool))
+)
+
+(define-read-only (get-proposal-count)
+    (ok (var-get proposal-count))
+)
+
+;; Private Functions
+
+(define-private (get-tier-info (stake-amount uint))
+    (if (>= stake-amount u10000000)
+        {tier-level: u3, reward-multiplier: u200}
+        (if (>= stake-amount u5000000)
+            {tier-level: u2, reward-multiplier: u150}
+            {tier-level: u1, reward-multiplier: u100}
+        )
+    )
+)
+
+(define-private (calculate-lock-multiplier (lock-period uint))
+    (if (>= lock-period u8640)     ;; 2 months
+        u150                       ;; 1.5x multiplier
+        (if (>= lock-period u4320) ;; 1 month
+            u125                   ;; 1.25x multiplier
+            u100                   ;; 1x multiplier (no lock)
+        )
+    )
+)
+
