@@ -155,8 +155,8 @@
                 tx-sender
                 {
                     amount: amount,
-                    start-block: block-height,
-                    last-claim: block-height,
+                    start-block: stacks-block-height,
+                    last-claim: stacks-block-height,
                     lock-period: lock-period,
                     cooldown-start: none,
                     accumulated-rewards: u0
@@ -194,7 +194,7 @@
             tx-sender
             (merge staking-position
                 {
-                    cooldown-start: (some block-height)
+                    cooldown-start: (some stacks-block-height)
                 }
             )
         )
@@ -208,7 +208,7 @@
             (staking-position (unwrap! (map-get? StakingPositions tx-sender) ERR-NO-STAKE))
             (cooldown-start (unwrap! (get cooldown-start staking-position) ERR-NOT-AUTHORIZED))
         )
-        (asserts! (>= (- block-height cooldown-start) (var-get cooldown-period)) ERR-COOLDOWN-ACTIVE)
+        (asserts! (>= (- stacks-block-height cooldown-start) (var-get cooldown-period)) ERR-COOLDOWN-ACTIVE)
         
         (try! (as-contract (stx-transfer? (get amount staking-position) tx-sender tx-sender)))
         
@@ -233,8 +233,8 @@
             {
                 creator: tx-sender,
                 description: description,
-                start-block: block-height,
-                end-block: (+ block-height voting-period),
+                start-block: stacks-block-height,
+                end-block: (+ stacks-block-height voting-period),
                 executed: false,
                 votes-for: u0,
                 votes-against: u0,
@@ -255,7 +255,7 @@
             (voting-power (get voting-power user-position))
             (max-proposal-id (var-get proposal-count))
         )
-        (asserts! (< block-height (get end-block proposal)) ERR-NOT-AUTHORIZED)
+        (asserts! (< stacks-block-height (get end-block proposal)) ERR-NOT-AUTHORIZED)
         (asserts! (and (> proposal-id u0) (<= proposal-id max-proposal-id)) ERR-INVALID-PROTOCOL)
         
         (map-set Proposals { proposal-id: proposal-id }
@@ -323,3 +323,37 @@
     )
 )
 
+(define-private (calculate-rewards (user principal) (blocks uint))
+    (let
+        (
+            (staking-position (unwrap! (map-get? StakingPositions user) u0))
+            (user-position (unwrap! (map-get? UserPositions user) u0))
+            (stake-amount (get amount staking-position))
+            (base-rate (var-get base-reward-rate))
+            (multiplier (get rewards-multiplier user-position))
+        )
+        (/ (* (* (* stake-amount base-rate) multiplier) blocks) u14400000)
+    )
+)
+
+(define-private (is-valid-description (desc (string-utf8 256)))
+    (and 
+        (>= (len desc) u10)
+        (<= (len desc) u256)
+    )
+)
+
+(define-private (is-valid-lock-period (lock-period uint))
+    (or 
+        (is-eq lock-period u0)
+        (is-eq lock-period u4320)
+        (is-eq lock-period u8640)
+    )
+)
+
+(define-private (is-valid-voting-period (period uint))
+    (and 
+        (>= period u100)
+        (<= period u2880)
+    )
+)
